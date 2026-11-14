@@ -1203,7 +1203,7 @@ async function initStore(){
   try{DL=window.claude&&window.claude.use?await window.claude.use('downloads'):null}catch(e){DL=null}
   if(!db){Store.mode='local';Store.loaded=true;Store.standalone=!(window.claude&&window.claude.use);
     try{const raw=localStorage.getItem(LS_KEY);if(raw){const d=JSON.parse(raw);Store.students=d.students||[];Store.tests=d.tests||[];Store.practices=d.practices||[]}Store.persist=true}catch(e){Store.persist=false}
-    Store.note=Store.persist?'':'เบราว์เซอร์นี้ไม่อนุญาตให้บันทึกข้อมูล ข้อมูลจะหายเมื่อปิดหน้า กรุณาสำรองข้อมูลก่อนปิด';render();if(Store.standalone&&SC.url&&SC.key)startSync();return}
+    Store.note=Store.persist?'':'เบราว์เซอร์นี้ไม่อนุญาตให้บันทึกข้อมูล ข้อมูลจะหายเมื่อปิดหน้า กรุณาสำรองข้อมูลก่อนปิด';render();if(Store.standalone){if(/^#join=/.test(location.hash||'')){await handleJoinHash();return}if(SC.url&&SC.key)startSync()}return}
   Store.mode='db';Store.db=db;
   if(user){try{const c=await user.can('data.write');if(c===false){Store.canWrite=false}}catch(e){}}
   let first=false;const timer=setTimeout(()=>{if(!first){Store.note='ยังเชื่อมต่อฐานข้อมูลไม่ได้ ข้อมูลที่แสดงอาจยังไม่ครบ';Store.loaded=true;softRender()}},10000);
@@ -1232,6 +1232,21 @@ async function pull(){if(!Store.sync)return false;try{const res=await fetch(SC.u
   Store.students=ap(j.students,'students');Store.tests=ap(j.tests,'tests');Store.practices=ap(j.practices,'practice');anCache.clear();saveLocal();Sync.last=Date.now();if(!Sync.outbox.length)Sync.err='';softRender();return true}
   catch(e){Sync.err='ยังเชื่อมต่อ Google Sheet ไม่ได้ (ใช้ข้อมูลในเครื่องชั่วคราว)';softRender();return false}}
 function startSync(){Store.sync=true;loadOutbox();pull().then(()=>flush());clearInterval(Sync.timer);Sync.timer=setInterval(()=>{flush().then(()=>pull())},60000);window.addEventListener('online',()=>{flush();pull()})}
+function joinLinkFor(url,key){const b=btoa(unescape(encodeURIComponent(JSON.stringify({u:url,k:key}))));return location.origin+location.pathname+'#join='+encodeURIComponent(b)}
+async function connectSheets(url,key,quiet){if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)&&!(location.hostname==='localhost'&&/^http:\/\/localhost/.test(url))){toast('URL ต้องขึ้นต้นด้วย https://script.google.com/');return false}if(!key){toast('กรุณาใส่รหัสสถาบัน');return false}
+  if(!quiet)toast('กำลังทดสอบการเชื่อมต่อ…');let j;try{const res=await fetch(url+(url.includes('?')?'&':'?')+'action=ping&key='+encodeURIComponent(key));j=await res.json()}catch(e){toast('เชื่อมต่อไม่ได้ ตรวจสอบ URL และการตั้งค่า Who has access = Anyone');return false}
+  if(!j.ok){toast(j.error==='unauthorized'?'รหัสสถาบันไม่ถูกต้อง':'เชื่อมต่อไม่สำเร็จ: '+j.error);return false}
+  try{localStorage.setItem('map-sheets-url',url);localStorage.setItem('map-sheets-key',key)}catch(e){}
+  const local={students:[...Store.students],tests:[...Store.tests],practice:[...Store.practices]};startSync();const ok=await pull();
+  if(ok){let n=0;for(const col of ['students','tests','practice']){const have=new Set((col==='practice'?Store.practices:Store[col]).map(x=>String(x.id)));local[col].forEach(x=>{if(!have.has(String(x.id))){const {id,...data}=x;Sync.outbox.push({action:'put',col,id,data});n++}})}
+    saveOutbox();if(n){const add=(arr,col)=>{Sync.outbox.filter(o=>o.col===col).forEach(o=>{if(!arr.some(x=>x.id===o.id))arr.push({id:o.id,...o.data})})};add(Store.students,'students');add(Store.tests,'tests');add(Store.practices,'practice');saveLocal()}
+    flush();toast(n?`เชื่อมต่อแล้ว กำลังส่งข้อมูลจากเครื่องนี้ ${n} รายการขึ้น Sheet`:'เชื่อมต่อ Google Sheet เรียบร้อย');render()}return ok}
+async function handleJoinHash(){const m=/^#join=(.+)$/.exec(location.hash||'');if(!m)return false;try{history.replaceState(null,'',location.pathname+location.search)}catch(e){location.hash=''}
+  let d;try{d=JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1])))))}catch(e){toast('ลิงก์เชื่อมต่อไม่ถูกต้อง');return false}
+  if(!d||!d.u||!d.k){toast('ลิงก์เชื่อมต่อไม่ถูกต้อง');return false}
+  return new Promise(res=>{modal(`<h2>เชื่อมต่อฐานข้อมูลของสถาบัน?</h2><p class="sub" style="margin:0">เครื่องนี้จะซิงก์รายชื่อและผลสอบกับ Google Sheet ของสถาบัน และจำการเชื่อมต่อไว้ ไม่ต้องตั้งค่าอีก</p><div class="tag" style="word-break:break-all">${esc(d.u.slice(0,60))}…</div>
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost" id="jn-no">ไม่เชื่อมต่อ</button><button class="btn primary" id="jn-yes">เชื่อมต่อ</button></div>`);
+    $('#jn-no').onclick=()=>{closeModal();if(SC.url&&SC.key)startSync();res(false)};$('#jn-yes').onclick=async()=>{closeModal();res(await connectSheets(d.u,d.k))}})}
 function syncBadge(){if(!Store.sync)return '';const n=Sync.outbox.length;const cls=Sync.err?'bad':n?'warn':'good';
   return `<div class="notice" style="background:var(--${cls}-soft);display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="pill ${cls}">${Sync.err?'มีปัญหา':n?'กำลังส่ง':'ซิงก์แล้ว'}</span><span>${Sync.err?esc(Sync.err):n?`รอส่งขึ้น Google Sheet ${n} รายการ`:`เชื่อมต่อ Google Sheet แล้ว${Sync.last?' · อัปเดตล่าสุด '+new Date(Sync.last).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}`}</span><button class="btn ghost" data-act="syncNow" style="margin-left:auto">ซิงก์ตอนนี้</button></div>`}
 function saveLocal(){if(Store.mode!=='local'||!Store.persist)return;try{localStorage.setItem(LS_KEY,JSON.stringify({students:Store.students,tests:Store.tests,practices:Store.practices,savedAt:Date.now()}))}catch(e){toast('บันทึกลงเครื่องไม่สำเร็จ (พื้นที่อาจเต็ม) กรุณาสำรองข้อมูล')}}
@@ -1267,7 +1282,7 @@ function backupPanel(){if(Store.mode!=='local')return '';const last=(()=>{try{re
   const sheetsUI=Store.standalone?`<section class="panel"><div class="panel-h"><div><h2>แชร์ข้อมูลผ่าน Google Sheet</h2><div class="sub">${Store.sync?'เครื่องนี้เชื่อมต่อแล้ว รายชื่อและผลสอบจะซิงก์กับครูทุกคนที่ใช้ Sheet เดียวกัน':'ใส่ Web app URL จาก Google Apps Script และรหัสสถาบัน เพื่อให้ครูทุกเครื่องเห็นข้อมูลชุดเดียวกัน'}</div></div></div>
   <div class="row"><div class="field" style="flex:2 1 320px"><label for="sh-url">Web app URL</label><input class="input" id="sh-url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(SC.url)}"></div>
   <div class="field" style="flex:1 1 160px"><label for="sh-key">รหัสสถาบัน</label><input class="input" id="sh-key" type="password" value="${esc(SC.key)}"></div>
-  <div class="row" style="align-self:flex-end"><button class="btn primary" data-act="sheetsConnect">${Store.sync?'บันทึกและเชื่อมต่อใหม่':'ทดสอบและเชื่อมต่อ'}</button>${Store.sync?'<button class="btn danger" data-act="sheetsOff">ยกเลิกการเชื่อมต่อ</button>':''}</div></div></section>`:'';
+  <div class="row" style="align-self:flex-end"><button class="btn primary" data-act="sheetsConnect">${Store.sync?'บันทึกและเชื่อมต่อใหม่':'ทดสอบและเชื่อมต่อ'}</button>${Store.sync?'<button class="btn" data-act="joinLink">🔗 ลิงก์เชื่อมต่อสำหรับครู</button><button class="btn danger" data-act="sheetsOff">ยกเลิกการเชื่อมต่อ</button>':''}</div></div></section>`:'';
   return sheetsUI+`<section class="panel"><div class="panel-h"><div><h2>ข้อมูลในเครื่องนี้</h2><div class="sub">${Store.sync?'มีสำเนาในเครื่องนี้ด้วย ใช้ต่อได้แม้เน็ตหลุด · ไฟล์สำรองยังแนะนำให้ทำเป็นครั้งคราว':'รายชื่อและผลสอบบันทึกไว้ในเบราว์เซอร์ของเครื่องนี้เท่านั้น ควรกดสำรองข้อมูลทุกสัปดาห์ และใช้ไฟล์สำรองเพื่อย้ายไปเครื่องอื่น'}${last?` · สำรองล่าสุด ${fmtDT(last)}`:' · ยังไม่เคยสำรอง'}</div></div>
   <div class="row"><button class="btn primary" data-act="backup">⬇ สำรองข้อมูล (.json)</button><label class="btn" for="restore-file" style="cursor:pointer">⬆ นำเข้าข้อมูล</label><input type="file" id="restore-file" accept=".json,application/json" style="display:none"></div></div></section>`}
 function renderHome(){return renderHome0()+backupPanel()}
@@ -1478,14 +1493,12 @@ const ACT={
   demo:()=>makeDemo(),
   syncNow:()=>{flush().then(()=>pull()).then(ok=>toast(ok?'ซิงก์เรียบร้อย':'ซิงก์ไม่สำเร็จ'))},
   sheetsOff:()=>confirmBox('ยกเลิกการเชื่อมต่อ Google Sheet บนเครื่องนี้? ข้อมูลใน Sheet จะไม่ถูกลบ','ยกเลิกการเชื่อมต่อ',async()=>{try{localStorage.removeItem('map-sheets-key')}catch(e){}Store.sync=false;clearInterval(Sync.timer);render()}),
-  sheetsConnect:async()=>{const url=$('#sh-url').value.trim(),key=$('#sh-key').value.trim();if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)){toast('URL ต้องขึ้นต้นด้วย https://script.google.com/');return}if(!key){toast('กรุณาใส่รหัสสถาบัน');return}
-    toast('กำลังทดสอบการเชื่อมต่อ…');let j;try{const res=await fetch(url+(url.includes('?')?'&':'?')+'action=ping&key='+encodeURIComponent(key));j=await res.json()}catch(e){toast('เชื่อมต่อไม่ได้ ตรวจสอบ URL และการตั้งค่า Who has access = Anyone');return}
-    if(!j.ok){toast(j.error==='unauthorized'?'รหัสสถาบันไม่ถูกต้อง':'เชื่อมต่อไม่สำเร็จ: '+j.error);return}
-    try{localStorage.setItem('map-sheets-url',url);localStorage.setItem('map-sheets-key',key)}catch(e){}
-    const local={students:[...Store.students],tests:[...Store.tests],practice:[...Store.practices]};startSync();const ok=await pull();
-    if(ok){let n=0;for(const col of ['students','tests','practice']){const have=new Set((col==='practice'?Store.practices:Store[col]).map(x=>String(x.id)));local[col].forEach(x=>{if(!have.has(String(x.id))){const {id,...data}=x;Sync.outbox.push({action:'put',col,id,data});n++}})}
-      saveOutbox();if(n){const add=(arr,col)=>{Sync.outbox.filter(o=>o.col===col).forEach(o=>{if(!arr.some(x=>x.id===o.id))arr.push({id:o.id,...o.data})})};add(Store.students,'students');add(Store.tests,'tests');add(Store.practices,'practice');saveLocal()}
-      flush();toast(n?`เชื่อมต่อแล้ว กำลังส่งข้อมูลจากเครื่องนี้ ${n} รายการขึ้น Sheet`:'เชื่อมต่อ Google Sheet เรียบร้อย');render()}},
+  sheetsConnect:async()=>{const url=$('#sh-url').value.trim(),key=$('#sh-key').value.trim();await connectSheets(url,key)},
+  joinLink:()=>{const L=joinLinkFor(SC.url,SC.key);modal(`<h2>ลิงก์เชื่อมต่อสำหรับครู</h2><p class="sub" style="margin:0">ส่งลิงก์นี้ให้ครูทางแชตส่วนตัว เมื่อกดเปิด เครื่องนั้นจะเชื่อม Google Sheet ทันทีและจำไว้ตลอด</p>
+    <textarea class="input" id="join-text" rows="4" readonly style="width:100%;font-size:.85rem;word-break:break-all">${esc(L)}</textarea>
+    <div class="notice">⚠️ ลิงก์นี้มีรหัสสถาบันอยู่ในตัว ใครได้ลิงก์จะเห็นข้อมูลนักเรียนทั้งหมด ห้ามโพสต์ในกลุ่มที่มีผู้ปกครองหรือนักเรียน</div>
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-act="closeModal">ปิด</button><button class="btn primary" id="join-copy">คัดลอกลิงก์</button></div>`);
+    $('#join-copy').onclick=async()=>{try{await navigator.clipboard.writeText(L);toast('คัดลอกลิงก์แล้ว')}catch(e){const t=$('#join-text');t.select();toast('กด Ctrl+C (⌘+C) เพื่อคัดลอก')}}},
   backup:()=>{const d={app:'MAP Math & Science',version:1,exportedAt:new Date().toISOString(),students:Store.students,tests:Store.tests,practices:Store.practices};saveBlob(`MAP-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify(d),'application/json');try{localStorage.setItem(LS_KEY+'-backup',Date.now())}catch(e){}toast(`สำรองข้อมูลแล้ว: นักเรียน ${d.students.length} คน · ผลสอบ ${d.tests.length} ครั้ง`);softRender()},
   subj:d=>{S.subj=d.s;render()},brange:d=>{S.brange=d.r;render()},bsubj:d=>{S.bsubj=d.s;S.bank=null;render()},
   startTest:()=>{const s=Store.students.find(x=>x.id===S.sid);startTest(s,+$('#len').value,S.subj)},
