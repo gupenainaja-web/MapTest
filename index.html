@@ -1260,7 +1260,7 @@ async function del(col,id){if(Store.mode==='db'){try{await Store.db.collection(c
 function softRender(){if(S.view==='test'||S.view==='practice')return;const a=document.activeElement;const id=a&&a.id;render();if(id&&document.getElementById(id)){const el=document.getElementById(id);el.focus();if(el.setSelectionRange&&el.value!==undefined){try{el.setSelectionRange(el.value.length,el.value.length)}catch(e){}}}}
 
 /* ---------- shell ---------- */
-function shell(inner){const nav=[['home','นักเรียน'],['bank','คลังข้อสอบและแบบฝึกหัด'],['guide','วิธีใช้และการแปลผล']];
+function shell(inner){const nav=[['home','นักเรียน'],['bank','คลังข้อสอบและแบบฝึกหัด'],['guide','วิธีใช้และการแปลผล']].concat(Store.mode==='local'?[['settings','⚙️ ตั้งค่า']]:[]);
   const cur=['student','report'].includes(S.view)?'home':S.view;
   return `<header class="topbar"><div class="in"><div class="brand"><span class="mark">MAP</span>Math & Science ป.1–ม.3 แบบปรับระดับ</div>
   <nav class="nav">${nav.map(([v,t])=>`<button data-act="go" data-v="${v}" aria-current="${cur===v}">${t}</button>`).join('')}</nav></div></header>
@@ -1268,7 +1268,7 @@ function shell(inner){const nav=[['home','นักเรียน'],['bank','�
 function render(){const app=$('#app');
   if(S.view==='test'){app.innerHTML=renderTest();return}
   if(S.view==='practice'){app.innerHTML=renderPractice();return}
-  const v={home:renderHome,student:renderStudent,report:renderReport,bank:renderBank,guide:renderGuide}[S.view]||renderHome;
+  const v={home:renderHome,student:renderStudent,report:renderReport,bank:renderBank,guide:renderGuide,settings:renderSettings}[S.view]||renderHome;
   app.innerHTML=shell(Store.loaded?v():`<div class="panel empty"><p>กำลังโหลดข้อมูล…</p></div>`)}
 
 /* ---------- home ---------- */
@@ -1285,7 +1285,8 @@ function backupPanel(){if(Store.mode!=='local')return '';const last=(()=>{try{re
   <div class="row" style="align-self:flex-end"><button class="btn primary" data-act="sheetsConnect">${Store.sync?'บันทึกและเชื่อมต่อใหม่':'ทดสอบและเชื่อมต่อ'}</button>${Store.sync?'<button class="btn" data-act="joinLink">🔗 ลิงก์เชื่อมต่อสำหรับครู</button><button class="btn danger" data-act="sheetsOff">ยกเลิกการเชื่อมต่อ</button>':''}</div></div></section>`:'';
   return sheetsUI+`<section class="panel"><div class="panel-h"><div><h2>ข้อมูลในเครื่องนี้</h2><div class="sub">${Store.sync?'มีสำเนาในเครื่องนี้ด้วย ใช้ต่อได้แม้เน็ตหลุด · ไฟล์สำรองยังแนะนำให้ทำเป็นครั้งคราว':'รายชื่อและผลสอบบันทึกไว้ในเบราว์เซอร์ของเครื่องนี้เท่านั้น ควรกดสำรองข้อมูลทุกสัปดาห์ และใช้ไฟล์สำรองเพื่อย้ายไปเครื่องอื่น'}${last?` · สำรองล่าสุด ${fmtDT(last)}`:' · ยังไม่เคยสำรอง'}</div></div>
   <div class="row"><button class="btn primary" data-act="backup">⬇ สำรองข้อมูล (.json)</button><label class="btn" for="restore-file" style="cursor:pointer">⬆ นำเข้าข้อมูล</label><input type="file" id="restore-file" accept=".json,application/json" style="display:none"></div></div></section>`}
-function renderHome(){return renderHome0()+backupPanel()}
+function renderHome(){return renderHome0()}
+function renderSettings(){return `<div><h1 style="margin-bottom:4px">ตั้งค่า</h1><div class="sub">การเชื่อมต่อ Google Sheet และการสำรองข้อมูล</div></div>`+backupPanel()}
 function renderHome0(){const N=Store.students.length;
   if(!N)return `<section class="panel empty"><h1>เริ่มต้นใช้ระบบจำลองสอบ MAP คณิตศาสตร์และวิทยาศาสตร์</h1>
     <p>เพิ่มรายชื่อนักเรียน แล้วให้เด็กทำแบบทดสอบที่ปรับความยากตามคำตอบทีละข้อ ระบบจะสรุปคะแนน ระดับเทียบชั้น หัวข้อที่ควรปรับปรุง และจัดชุดแบบฝึกหัดเฉพาะคนให้ทันที</p>
