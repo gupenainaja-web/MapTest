@@ -1264,14 +1264,26 @@ function softRender(){if(S.view==='test'||S.view==='practice'||needLogin())retur
 
 /* ---------- shell ---------- */
 function shell(inner){const nav=[['home','นักเรียน'],['bank','คลังข้อสอบและแบบฝึกหัด'],['guide','วิธีใช้และการแปลผล']].concat(Store.mode==='local'?[['settings','⚙️ ตั้งค่า']]:[]);
-  const cur=['student','report'].includes(S.view)?'home':S.view;
+  const cur=['student','report'].includes(S.view)?'home':S.view;const lo=Store.standalone&&Auth.ok?`<button data-act="logout" title="ออกจากระบบ">🔒 ออกจากระบบ</button>`:'';
   return `<header class="topbar"><div class="in"><div class="brand"><span class="mark">MAP</span>Math & Science ป.1–ม.3 แบบปรับระดับ</div>
-  <nav class="nav">${nav.map(([v,t])=>`<button data-act="go" data-v="${v}" aria-current="${cur===v}">${t}</button>`).join('')}</nav></div></header>
+  <nav class="nav">${nav.map(([v,t])=>`<button data-act="go" data-v="${v}" aria-current="${cur===v}">${t}</button>`).join('')}${lo}</nav></div></header>
   <main>${syncBadge()}${Store.note?`<div class="notice">${esc(Store.note)}</div>`:''}${!Store.canWrite?`<div class="notice">คุณเปิดหน้านี้แบบดูอย่างเดียว จึงเพิ่มนักเรียนหรือบันทึกผลสอบไม่ได้ ให้เจ้าของหน้าเชิญคุณทางอีเมลด้วยสิทธิ์ Can edit</div>`:''}${inner}</main>`}
 const Auth={get ok(){try{if(sessionStorage.getItem('map-auth')==='1')return true;return +(localStorage.getItem('map-auth-until')||0)>Date.now()}catch(e){return false}},
   set(remember){try{sessionStorage.setItem('map-auth','1');if(remember)localStorage.setItem('map-auth-until',Date.now()+30*864e5)}catch(e){}},
   clear(){try{sessionStorage.removeItem('map-auth');localStorage.removeItem('map-auth-until')}catch(e){}}};
 const needLogin=()=>Store.standalone&&!Auth.ok;
+const Admin={get ok(){try{return +(sessionStorage.getItem('map-admin-until')||0)>Date.now()}catch(e){return false}},set(){try{sessionStorage.setItem('map-admin-until',Date.now()+15*60000)}catch(e){}},clear(){try{sessionStorage.removeItem('map-admin-until')}catch(e){}}};
+async function sha256(t){try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('map-admin|'+t));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}catch(e){return ''}}
+function renderAdminGate(){return `<div class="login-wrap" style="min-height:60vh;background:none"><form class="login" id="admin-form" autocomplete="off"><div style="font-size:2rem;text-align:center">🔐</div>
+  <h1 style="text-align:center">เฉพาะผู้ดูแล</h1><p class="sub" style="text-align:center;margin:0">ใส่รหัสผู้ดูแลเพื่อเข้าหน้าตั้งค่า</p>
+  <div class="field"><label for="ad-pw">รหัสผู้ดูแล</label><input class="input" id="ad-pw" type="password"></div><div id="ad-err" class="sub" style="color:var(--bad);min-height:1.2em"></div>
+  <div class="row" style="justify-content:space-between"><button type="button" class="btn ghost" data-act="go" data-v="home">ยกเลิก</button><button class="btn primary" type="submit">เข้าหน้าตั้งค่า</button></div></form></div>`}
+async function doAdmin(){const pw=$('#ad-pw').value;const err=m=>{$('#ad-err').textContent=m};if(!pw){err('กรุณาใส่รหัสผู้ดูแล');return}err('กำลังตรวจสอบ…');
+  let j=null;try{const res=await fetch(SC.url+(SC.url.includes('?')?'&':'?')+'action=admin&key='+encodeURIComponent(SC.key)+'&admin='+encodeURIComponent(pw));j=await res.json()}catch(e){j=null}
+  if(j&&j.admin){if(j.ok){Admin.set();try{localStorage.setItem('map-admin-h',await sha256(pw))}catch(e){}render();return}err(j.error==='admin key not set'?'ยังไม่ได้ตั้ง ADMIN_KEY ใน Apps Script':'รหัสผู้ดูแลไม่ถูกต้อง');return}
+  if(j&&!j.admin){err(j.ok?'ต้องอัปเดตโค้ด Apps Script เวอร์ชันใหม่ก่อน (มี ADMIN_KEY)':'รหัสสถาบันในเครื่องนี้ไม่ถูกต้อง');return}
+  let h='';try{h=localStorage.getItem('map-admin-h')||''}catch(e){}if(h&&h===await sha256(pw)){Admin.set();render();toast('ออฟไลน์อยู่ ตรวจรหัสจากเครื่องนี้แทน');return}
+  err('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง')}
 function renderLogin(){const needUrl=!SC.url;return `<div class="login-wrap"><form class="login" id="login-form" autocomplete="off">
   <div class="brand" style="justify-content:center"><span class="mark">MAP</span>Math & Science ป.1–ม.3</div>
   <h1 style="text-align:center">เข้าสู่ระบบ</h1><p class="sub" style="text-align:center;margin:0">สำหรับครูและเจ้าหน้าที่ของสถาบัน</p>
@@ -1290,6 +1302,7 @@ async function doLogin(){const pw=$('#lg-pw').value.trim();const url=($('#lg-url
 function render(){const app=$('#app');if(needLogin()){app.innerHTML=renderLogin();const f=$('#login-form');f.onsubmit=e=>{e.preventDefault();doLogin()};setTimeout(()=>{const x=$('#lg-url')||$('#lg-pw');x&&x.focus()},50);return}
   if(S.view==='test'){app.innerHTML=renderTest();return}
   if(S.view==='practice'){app.innerHTML=renderPractice();return}
+  if(S.view==='settings'&&Store.standalone&&Store.sync&&!Admin.ok){app.innerHTML=shell(renderAdminGate());const f=$('#admin-form');f.onsubmit=e=>{e.preventDefault();doAdmin()};setTimeout(()=>{const x=$('#ad-pw');x&&x.focus()},50);return}
   const v={home:renderHome,student:renderStudent,report:renderReport,bank:renderBank,guide:renderGuide,settings:renderSettings}[S.view]||renderHome;
   app.innerHTML=shell(Store.loaded?v():`<div class="panel empty"><p>กำลังโหลดข้อมูล…</p></div>`)}
 
@@ -1308,7 +1321,7 @@ function backupPanel(){if(Store.mode!=='local')return '';const last=(()=>{try{re
   return sheetsUI+`<section class="panel"><div class="panel-h"><div><h2>ข้อมูลในเครื่องนี้</h2><div class="sub">${Store.sync?'มีสำเนาในเครื่องนี้ด้วย ใช้ต่อได้แม้เน็ตหลุด · ไฟล์สำรองยังแนะนำให้ทำเป็นครั้งคราว':'รายชื่อและผลสอบบันทึกไว้ในเบราว์เซอร์ของเครื่องนี้เท่านั้น ควรกดสำรองข้อมูลทุกสัปดาห์ และใช้ไฟล์สำรองเพื่อย้ายไปเครื่องอื่น'}${last?` · สำรองล่าสุด ${fmtDT(last)}`:' · ยังไม่เคยสำรอง'}</div></div>
   <div class="row"><button class="btn primary" data-act="backup">⬇ สำรองข้อมูล (.json)</button><label class="btn" for="restore-file" style="cursor:pointer">⬆ นำเข้าข้อมูล</label><input type="file" id="restore-file" accept=".json,application/json" style="display:none"></div></div></section>`}
 function renderHome(){return renderHome0()}
-function renderSettings(){return `<div class="panel-h"><div><h1 style="margin-bottom:4px">ตั้งค่า</h1><div class="sub">การเชื่อมต่อ Google Sheet และการสำรองข้อมูล</div></div>${Store.standalone?'<button class="btn" data-act="logout">🔒 ออกจากระบบ</button>':''}</div>`+backupPanel()}
+function renderSettings(){return `<div class="panel-h"><div><h1 style="margin-bottom:4px">ตั้งค่า</h1><div class="sub">การเชื่อมต่อ Google Sheet และการสำรองข้อมูล</div></div>${Store.standalone?'<button class="btn" data-act="adminLock">🔐 ล็อกหน้าตั้งค่า</button>':''}</div>`+backupPanel()}
 function renderHome0(){const N=Store.students.length;
   if(!N)return `<section class="panel empty"><h1>เริ่มต้นใช้ระบบจำลองสอบ MAP คณิตศาสตร์และวิทยาศาสตร์</h1>
     <p>เพิ่มรายชื่อนักเรียน แล้วให้เด็กทำแบบทดสอบที่ปรับความยากตามคำตอบทีละข้อ ระบบจะสรุปคะแนน ระดับเทียบชั้น หัวข้อที่ควรปรับปรุง และจัดชุดแบบฝึกหัดเฉพาะคนให้ทันที</p>
@@ -1509,12 +1522,13 @@ async function makeDemo(){const id='demo-'+uid();const ok=await put('students',i
 
 /* ---------- actions ---------- */
 const ACT={
-  go:d=>{S.view=d.v;render();window.scrollTo(0,0)},grade:d=>{S.grade=d.g;render()},
+  go:d=>{if(S.view==='settings'&&d.v!=='settings')Admin.clear();S.view=d.v;render();window.scrollTo(0,0)},grade:d=>{S.grade=d.g;render()},
   openStudent:d=>{S.view='student';S.sid=d.id;render();window.scrollTo(0,0)},openReport:d=>{S.view='report';S.tid=d.tid;render();window.scrollTo(0,0)},
   addStudent:()=>studentForm(),editStudent:()=>studentForm(Store.students.find(x=>x.id===S.sid)),closeModal:(d,el,e)=>{if(d.self&&e.target!==el)return;closeModal()},
   delStudent:()=>{const s=Store.students.find(x=>x.id===S.sid);confirmBox(`ลบ ${esc(s.name)} และผลสอบทั้งหมดของนักเรียนคนนี้?`,'ลบ',async()=>{for(const t of testsOf(s.id))await del('tests',t.id);for(const p of Store.practices.filter(p=>p.studentId===s.id))await del('practice',p.id);await del('students',s.id);S.view='home';render()})},
   demo:()=>makeDemo(),
-  logout:()=>confirmBox('ออกจากระบบบนเครื่องนี้? ครั้งต่อไปต้องใส่รหัสผ่านอีกครั้ง','ออกจากระบบ',async()=>{Auth.clear();clearInterval(Sync.timer);S.view='home';render()}),
+  adminLock:()=>{Admin.clear();S.view='home';render()},
+  logout:()=>confirmBox('ออกจากระบบบนเครื่องนี้? ครั้งต่อไปต้องใส่รหัสผ่านอีกครั้ง','ออกจากระบบ',async()=>{Auth.clear();Admin.clear();clearInterval(Sync.timer);S.view='home';render()}),
   syncNow:()=>{flush().then(()=>pull()).then(ok=>toast(ok?'ซิงก์เรียบร้อย':'ซิงก์ไม่สำเร็จ'))},
   sheetsOff:()=>confirmBox('ยกเลิกการเชื่อมต่อ Google Sheet บนเครื่องนี้? ข้อมูลใน Sheet จะไม่ถูกลบ','ยกเลิกการเชื่อมต่อ',async()=>{try{localStorage.removeItem('map-sheets-key')}catch(e){}Store.sync=false;clearInterval(Sync.timer);Auth.clear();render()}),
   sheetsConnect:async()=>{const url=$('#sh-url').value.trim(),key=$('#sh-key').value.trim();await connectSheets(url,key)},

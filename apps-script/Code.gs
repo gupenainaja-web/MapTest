@@ -7,6 +7,9 @@
 // ① เปลี่ยนรหัสสถาบันตรงนี้ (ครูต้องใช้รหัสนี้ตอนเชื่อมต่อในเว็บ) — ใช้ตัวอักษรภาษาอังกฤษหรือตัวเลข อย่างน้อย 8 ตัว
 const ACCESS_KEY = 'CHANGE-ME-2026';
 
+// ② รหัสผู้ดูแล — ใช้เข้าเมนู ⚙️ ตั้งค่า ในเว็บ (ตั้งให้ต่างจาก ACCESS_KEY และไม่บอกครูคนอื่น)
+const ADMIN_KEY = 'CHANGE-ADMIN-2026';
+
 const SHEETS = {
   students: ['id', 'updatedAt', 'name', 'nickname', 'grade', 'code', 'json'],
   tests:    ['id', 'updatedAt', 'studentName', 'studentId', 'subject', 'grade', 'finishedAt', 'score', 'se', 'level', 'correct', 'items', 'json'],
@@ -17,6 +20,10 @@ function doGet(e) {
   const p = (e && e.parameter) || {};
   if (!checkKey_(p.key)) return out_({ ok: false, error: 'unauthorized' });
   if (p.action === 'ping') return out_({ ok: true, time: Date.now() });
+  if (p.action === 'admin') {
+    const ok = ADMIN_KEY !== 'CHANGE-ADMIN-2026' && typeof p.admin === 'string' && p.admin === ADMIN_KEY;
+    return out_({ ok: ok, admin: true, error: ok ? '' : (ADMIN_KEY === 'CHANGE-ADMIN-2026' ? 'admin key not set' : 'wrong admin key') });
+  }
   return out_({
     ok: true,
     students: readAll_('students'),
@@ -111,5 +118,6 @@ function toRow_(col, id, d) {
 function setup() {
   Object.keys(SHEETS).forEach(sheet_);
   if (ACCESS_KEY === 'CHANGE-ME-2026') Logger.log('⚠️ อย่าลืมเปลี่ยน ACCESS_KEY เป็นรหัสของสถาบันก่อน Deploy');
+  if (ADMIN_KEY === 'CHANGE-ADMIN-2026') Logger.log('⚠️ อย่าลืมเปลี่ยน ADMIN_KEY (รหัสผู้ดูแล)');
   else Logger.log('พร้อมใช้งาน — ไปที่ Deploy > New deployment > Web app');
 }
